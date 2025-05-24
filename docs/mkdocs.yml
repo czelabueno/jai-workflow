@@ -1,0 +1,170 @@
+site_name: jAI Workflows ☕
+site_description: Build programmatically custom agentic workflows, AI Agents, RAG systems for java.
+site_url: https://czelabueno.github.io/jai-workflow
+repo_url: https://github.com/czelabueno/jai-workflow
+
+# Copyright
+copyright: Copyright &copy; 2024 - 2025 <a href="https://github.com/czelabueno"  target="_blank" rel="noopener">Carlos Zela</a>
+
+theme:
+  name: material
+  logo: static/logo-circle.png
+  favicon: static/logo-circle.png
+  icon:
+    repo: fontawesome/brands/git-alt
+  palette:
+    - scheme: default
+      primary: white
+      accent: gray
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black
+      accent: white
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  features:
+    - announce.dismiss
+    - content.code.annotate
+    - content.code.copy
+    - content.code.select
+    - navigation.tabs
+    - navigation.top
+    - navigation.expand
+    - navigation.sections
+    - navigation.instant
+    - navigation.tracking
+    - navigation.indexes
+    - navigation.search.highlight
+    - navigation.search.share
+    - navigation.search.suggest
+    - navigation.search.suggestions
+    - navigation.footer
+  custom_dir: overrides
+
+# Plugins
+plugins:
+  - search:
+      lang: en
+      search_index_only: true
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      use_pygments: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      url_download: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+nav:
+  - Documentation:
+      - index.md
+      - Getting Started:
+          - Overview: getting-started/overview.md
+          - Quickstart: getting-started/quick-start.md
+          - Deployment:
+              - Local: getting-started/deployment/local.md
+              - Container: getting-started/deployment/container.md
+      - Guides:
+          - Agents:
+              - Overview: guides/agents/overview.md
+              - Build your first agent: guides/agents/first-agent.md
+              - Custom Agents: guides/agents/custom-agents.md
+          - Workflows:
+              - Overview: guides/workflows/overview.md
+              - Build your first workflow: guides/workflows/first-workflow.md
+              - Mastering flow state: guides/workflows/mastering-flow-state.md
+              - Distributing in modules: guides/workflows/distributing-in-modules.md
+      - Core Concepts:
+          - Agents: core-concepts/agents.md
+          - Agentic Collaboration: core-concepts/agentic-collaboration.md
+          - Nodes: core-concepts/nodes.md
+          - Modules: core-concepts/modules.md
+          - Remote module: core-concepts/remote-module.md
+          - Workflows: core-concepts/workflows.md
+          - Agent protocols:
+              - MCP: core-concepts/mcp.md
+          - Transition: core-concepts/transition.md
+          - Debugging: core-concepts/debugging.md
+          - Memory: core-concepts/memory.md
+          - Testing: core-concepts/testing.md
+          - Tools: core-concepts/tools.md
+          - Functional API: core-concepts/functional-api.md
+      - Framework:
+          - AI Workflow patterns:
+              - Sequential: framework/ai-workflow-patterns/sequential.md
+              - Parallel: framework/ai-workflow-patterns/parallel.md
+              - Conditional: framework/ai-workflow-patterns/conditional.md
+              - Loop: framework/ai-workflow-patterns/loop.md
+              - Branch: framework/ai-workflow-patterns/branch.md
+              - Human-in-the-loop: framework/ai-workflow-patterns/human-in-the-loop.md
+          - Agent Architecture:
+              - Agentic: framework/agent-architecture/agentic.md
+              - Workflow vs Agent: framework/agent-architecture/workflow-vs-agent.md
+          - Agentic Collaboration:
+              - Overview: framework/agentic-collaboration/overview.md
+              - Agentic Collaboration vs Multi-Agent Systems: framework/agentic-collaboration/agentic-collaboration-vs-multi-agent-systems.md
+          - Streaming:
+              - Overview: framework/streaming/overview.md
+              - Streaming Outputs: framework/streaming/streaming-outputs.md
+          - Persistence:
+              - Overview: framework/persistence/overview.md
+              - Durable Execution: framework/persistence/durable-execution.md
+              - Add persistence: framework/persistence/add-persistence.md
+          - Submodules:
+              - Overview: framework/submodules/overview.md
+              - Use submodule: framework/submodules/use-submodule.md
+              - Submodule with custom agent: framework/submodules/submodule-with-custom-agent.md
+          - Multi-agents:
+              - Overview: framework/multi-agents/overview.md
+              - Multi-agent systems: framework/multi-agents/multi-agent-systems.md
+          - Functional API:
+                - Overview: framework/functional-api/overview.md
+                - Use functional API: framework/functional-api/use-functional-api.md
+  - Pre-built Agents:
+      - Overview: pre-built-agents/overview.md
+      - Coder Agent: pre-built-agents/coder-agent.md
+      - Chat Agent: pre-built-agents/chat-agent.md
+      - Web Search Agent: pre-built-agents/web-search-agent.md
+  - Examples:
+      - AI Papers:
+          - Overview: examples/ai-papers/overview.md
+          - Mixture of Agents: examples/ai-papers/mixture-of-agents.md
+          - Corrective RAG: examples/ai-papers/corrective-rag.md
+          - Modular RAG: examples/ai-papers/modular-rag.md
+  - Releases:
+      - Changelog: releases/changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/czelabueno
+      name: Carlos Zela on GitHub
+    - icon: fontawesome/brands/twitter
+      link: https://x.com/c_zela
+      name: Carlos Zela on Twitter
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/czelabueno/
+      name: Carlos Zela on LinkedIn
