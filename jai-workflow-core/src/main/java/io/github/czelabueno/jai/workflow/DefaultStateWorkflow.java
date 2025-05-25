@@ -19,7 +19,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 
 import static java.util.stream.Collectors.toList;
@@ -28,14 +28,16 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultStateWorkflow.class);
+    private final String name;
     private final Map<TransitionState, List<TransitionState>> adjList;
     private volatile Node<T,?> startNode;
     private final T statefulBean;
     private final List<Transition> transitions; // definition transitions
     private final Map<TransitionState, CounterTransitionsPerState> transitionsPerState;
     private final List<TransitionState> compiledStates;
-    private int executionOrder;
+    private volatile int executionOrder;
     private final List<ComputedTransition> computedTransitions; // computed transitions after running
+    private boolean module;
     private final GraphImageGenerator graphImageGenerator;
 
     protected DefaultStateWorkflow(Builder<T> builder) {
@@ -46,18 +48,20 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
             throw new IllegalArgumentException("At least one edged must be added to the workflow");
         }
 
+        this.name = builder.name != null ? builder.name : "default";
         this.statefulBean = builder.statefulBean;
         this.adjList = new ConcurrentHashMap<>();
         this.transitions = Collections.synchronizedList(new ArrayList<>());
         this.computedTransitions = Collections.synchronizedList(new ArrayList<>());
+        this.module = false;
 
         this.graphImageGenerator = builder.graphImageGenerator != null ? builder.graphImageGenerator : GraphvizImageGenerator.builder().build();
 
-        // build transitions definition
+        // build transitions user definition
         this.transitionsPerState = new ConcurrentHashMap<>();
         buildDefinitionTransitions(builder.addEdges, builder.addNodes);
 
-        // build validation
+        // validate constraints
         this.compiledStates = Collections.synchronizedList(new ArrayList<>());
         compileValidation(WorkflowStateName.START);
     }
@@ -303,7 +307,7 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
 
     private void runNode(Node<T,?> node, Consumer<Node<T, ?>> eventConsumer) {
         log.debug("Running node name: " + node.getName() + "..");
-        synchronized (this.statefulBean){
+        synchronized (this.statefulBean) {
             node.execute(this.statefulBean);
         }
         if (eventConsumer != null) {
@@ -313,40 +317,85 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
         synchronized (this.adjList) {
             nextNodes = this.adjList.get(node);
         }
-        for (TransitionState nextNode : nextNodes) {
-            if (nextNode instanceof WorkflowStateName next) {
-                if (next == WorkflowStateName.END) {
-                    log.debug("Reached END state");
-                    computeTransition(this.executionOrder, node, next);
-                    this.executionOrder++;
-                    return;
+
+        if (node.hasLabel("Split")) {
+            // Parallel execution
+            log.debug("Running node in parallel..");
+            nextNodes.parallelStream()
+                    .forEach(nextNode -> {
+                        if (nextNode instanceof Node next) {
+                            computeTransition(node, next);
+                            runNode(next, eventConsumer);
+                        }
+                    });
+            // Wait for all parallel tasks to complete
+            ComputedTransition ct = getComputedTransitions().stream()
+                    .reduce((first, second) -> second)
+                    .orElse(null);
+            Node nodeMerge = ct.getTransition().to().hasLabel("Merge") ? (Node) ct.getTransition().to() : null;
+            if (nodeMerge != null) {
+                computeTransition(node, nodeMerge);
+                runNode(nodeMerge, eventConsumer);
+            }
+
+        } else if (node.hasLabel("Merge")) {
+            // Merge node waits for all parallel tasks to complete
+            log.debug("Running node in merge mode..");
+            for (TransitionState nextNode: nextNodes) {
+                if (nextNode instanceof Node next) {
+                    computeTransition(node, next);
+                    runNode(next, eventConsumer);
                 }
-            } else if (nextNode instanceof Node next) {
-                computeTransition(this.executionOrder,node, next);
-                this.executionOrder++;
-                runNode(next, eventConsumer);
-            } else if (nextNode instanceof Conditional next) {
-                computeTransition(this.executionOrder, node, next);
-                this.executionOrder++;
-                Node<T,?> conditionalNode = next.evaluate(this.statefulBean);
-                if (conditionalNode == null) {
-                    throw new IllegalStateException("Conditional node returned null");
-                } else {
-                    computeTransition(this.executionOrder, next, conditionalNode);
-                    this.executionOrder++;
-                    runNode(conditionalNode, eventConsumer);
+            }
+        } else {
+            // Sequential execution
+            log.debug("Running node sequentially..");
+            for (TransitionState nextNode : nextNodes) {
+                if (nextNode instanceof WorkflowStateName next) {
+                    if (next == WorkflowStateName.END) {
+                        log.debug("Reached END state");
+                        computeTransition(node, next);
+                        return;
+                    }
+                } else if (nextNode instanceof Node next) {
+                    computeTransition(node, next);
+                    if (!next.hasLabel("Merge")) {
+                        runNode(next, eventConsumer);
+                    }
+                } else if (nextNode instanceof Conditional next) {
+                    computeTransition(node, next);
+                    Node<T,?> conditionalNode = next.evaluate(this.statefulBean);
+                    if (conditionalNode == null) {
+                        throw new IllegalStateException("Conditional node returned null");
+                    } else {
+                        computeTransition(next, conditionalNode);
+                        runNode(conditionalNode, eventConsumer);
+                    }
                 }
             }
         }
     }
 
-    private void computeTransition(Integer order, TransitionState from, TransitionState to) {
+    private void computeTransition(TransitionState from, TransitionState to) {
         this.transitions.stream()
                 .filter(transition -> transition.from().equals(from) && transition.to().equals(to))
                 .findAny()
                 .ifPresent(transition -> {
-                    this.computedTransitions.add(ComputedTransition.from(order, transition));
+                    synchronized (this.computedTransitions) {
+                        Optional<Integer> existingOrder = this.computedTransitions.stream()
+                                .filter(t -> t.getTransition().from().equals(from) || t.getTransition().to().equals(to))
+                                .map(ComputedTransition::getOrder)
+                                .findFirst();
+
+                        int order = existingOrder.isPresent() ? existingOrder.get() : this.executionOrder++;
+                        this.computedTransitions.add(ComputedTransition.from(order, transition));
+                    }
                 });
+    }
+
+    @Override
+    public List<Transition> getTransitions() {
+        return this.transitions;
     }
 
     @Override
@@ -357,6 +406,17 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
         return this.computedTransitions.stream()
                 .sorted(Comparator.comparing(ComputedTransition::getOrder))
                 .collect(toUnmodifiableList());
+    }
+
+    /**
+     * Convert a StateWorkflow as a Module.
+     *
+     * @return a StateWorkflow as a Module
+     */
+    @Override
+    public StateWorkflow toModule() {
+        this.module=true;
+        return this;
     }
 
     /**
@@ -397,7 +457,8 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
                     .append(" {")
                     .append("Order: "+ transition.getOrder()+", ")
                     .append("ComputedAt: "+ transition.getComputedAt()+", ")
-                    .append("Payload: "+ transition.getPayload() + " }").append("]\n");
+                    .append("Payload: "+ transition.getPayload() +", ")
+                    .append("Thread: " + transition.getThread() + " }").append("]\n");
         }
         return sb.toString();
     }
@@ -449,16 +510,58 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
         return new Builder<>();
     }
 
+    // Module Attributes
+    @Override
+    public String graphName() {
+        return name.toLowerCase();
+    }
+
+    @Override
+    public List<String> labels() {
+        if (this.module) {
+            return List.of("Module");
+        }
+        return List.of("Workflow");
+    }
+
+    @Override
+    public Object input() {
+        return this.startNode.input();
+    }
+
+    @Override
+    public Object output() {
+        ComputedTransition lastComputedTransition = getComputedTransitions().stream()
+                .reduce((first, second) -> second)
+                .orElse(null);
+        if (lastComputedTransition != null) {
+            return lastComputedTransition.getPayload();
+        }
+        return null;
+    }
+
     /**
      * A builder for the DefaultStateWorkflow class.
      *
      * @param <T> the type of the stateful bean
      */
     public static class Builder<T> {
+        private String name;
         private T statefulBean;
         private List<Transition> addEdges = new ArrayList<>();
         private List<Node<T, ?>> addNodes = new ArrayList<>();
         private GraphImageGenerator graphImageGenerator;
+
+        /**
+         * Sets the name of the workflow.
+         *
+         * @param name the name of the workflow
+         * @return this builder
+         */
+        public Builder<T> name(String name) {
+            this.name = name;
+            return this;
+        }
 
         /**
          * Constructs a new builder with the specified stateful bean.

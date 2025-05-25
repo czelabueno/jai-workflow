@@ -16,6 +16,7 @@ public class ComputedTransition{
     private final Transition transition;
     private final LocalDateTime computedAt;
     private final Object payload;
+    private final Thread thread;
 
     private ComputedTransition(@NonNull Integer order, @NonNull Transition transition) {
         if (transition.from() == null) {
@@ -32,6 +33,7 @@ public class ComputedTransition{
         this.transition = transition;
         this.computedAt = LocalDateTime.now();
         this.payload = transition.from().output();
+        this.thread = Thread.currentThread();
     }
 
     /**
@@ -77,6 +79,7 @@ public class ComputedTransition{
                 ", transition=" + transition +
                 ", computedAt=" + computedAt +
                 ", payload=" + payload +
+                ", thread=" + thread +
                 '}';
     }
 }

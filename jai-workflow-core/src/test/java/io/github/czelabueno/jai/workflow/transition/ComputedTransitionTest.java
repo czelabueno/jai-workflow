@@ -155,6 +155,6 @@ class ComputedTransitionTest {
         ComputedTransition computedTransition = ComputedTransition.from(1, transition);
 
         // then
-        assertThat(computedTransition.toString()).isEqualTo("ComputedTransition{id=" + computedTransition.getId() + ", order=1, transition=" + transition + ", computedAt=" + computedTransition.getComputedAt() + ", payload=" + computedTransition.getPayload() + "}");
+        assertThat(computedTransition.toString()).isEqualTo("ComputedTransition{id=" + computedTransition.getId() + ", order=1, transition=" + transition + ", computedAt=" + computedTransition.getComputedAt() + ", payload=" + computedTransition.getPayload() + ", thread=" + computedTransition.getThread() + "}");
     }
 }

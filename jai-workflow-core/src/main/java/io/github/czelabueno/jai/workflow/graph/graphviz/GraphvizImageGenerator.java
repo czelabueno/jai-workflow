@@ -5,6 +5,7 @@ import guru.nidi.graphviz.model.Graph;
 import guru.nidi.graphviz.model.Link;
 import guru.nidi.graphviz.rough.FillStyle;
 import guru.nidi.graphviz.rough.Roughifyer;
+import io.github.czelabueno.jai.workflow.StateWorkflow;
 import io.github.czelabueno.jai.workflow.WorkflowStateName;
 import io.github.czelabueno.jai.workflow.graph.Format;
 import io.github.czelabueno.jai.workflow.graph.StyleAttribute;
@@ -107,7 +108,7 @@ public class GraphvizImageGenerator implements GraphImageGenerator {
             if (transitions == null || transitions.isEmpty()) {
                 throw new IllegalArgumentException("Transitions list can not be null or empty when dotFormat is null. Cannot generate image.");
             }
-            gv = Graphviz.fromGraph(createGraph(transitions, computedTransitions, styles)); //JS engine is used by default
+            gv = Graphviz.fromGraph(createGraph(transitions, computedTransitions, false, styles)); //JS engine is used by default
         }
         if (styles != null && styles.length > 0) {
             Graphviz finalGv = gv;
@@ -166,11 +167,11 @@ public class GraphvizImageGenerator implements GraphImageGenerator {
 
     /**
      * Generates the default DOT format string from the given list of transitions.
-     * This method is deprecated, and it is recommended to use the {@link #createGraph(List, List, StyleAttribute...)} method instead.
+     * This method is deprecated, and it is recommended to use the {@link #createGraph(List, List, Boolean,StyleAttribute...)} method instead.
      *
      * @param transitions the list of transitions
      * @return the generated DOT format string
-     * @deprecated Use {@link #createGraph(List, List, StyleAttribute...)} for generating the graph representation.
+     * @deprecated Use {@link #createGraph(List, List, Boolean, StyleAttribute...)} for generating the graph representation.
      */
     @Deprecated
     private String defaultDotFormat(List<Transition> transitions) {
@@ -221,7 +222,7 @@ public class GraphvizImageGenerator implements GraphImageGenerator {
      * @param styles      optional styles to apply to the graph (e.g., orientation)
      * @return the generated graph representation
      */
-    private static Graph createGraph(List<Transition> transitions, List<ComputedTransition> computedTransitions, StyleAttribute... styles) {
+    private static Graph createGraph(List<Transition> transitions, List<ComputedTransition> computedTransitions, Boolean subGraph, StyleAttribute... styles) {
         Rank.RankDir rankDir = Arrays.stream(styles)
                 .filter(style -> style == HORIZONTAL)
                 .findFirst()
@@ -328,6 +329,9 @@ public class GraphvizImageGenerator implements GraphImageGenerator {
         } else if (transition.from() instanceof Conditional) {
             return getGraphvizNodeFromNode(transition.from())
                     .link(to(getGraphvizNodeFromNode(transition.to())).with(Style.DASHED));
+        } else if (transition.to() instanceof StateWorkflow) {
+            // TODO: Implement logic for module(subgraph)
+            return null;
         } else {
             return getGraphvizNodeFromNode(transition.from())
                     .link(getGraphvizNodeFromNode(transition.to()));
@@ -335,8 +339,7 @@ public class GraphvizImageGenerator implements GraphImageGenerator {
     }
 
     private static guru.nidi.graphviz.model.Node getGraphvizNodeFromNode(TransitionState transitionState) {
-        if (transitionState instanceof Node) {
-            Node node = (Node) transitionState;
+        if (transitionState instanceof Node node) {
             List<String> labels = node.labels();
             String l = "";
             if (labels != null && !labels.isEmpty()) {
@@ -347,12 +350,23 @@ public class GraphvizImageGenerator implements GraphImageGenerator {
                 return node(sanitizeNodeName(node.graphName())).with(label, Color.ORANGE); // style with labels
             }
             return node(sanitizeNodeName(node.graphName())).with(label);
-        } else if (transitionState instanceof Conditional) {
-            Conditional node = (Conditional) transitionState;
+        } else if (transitionState instanceof Conditional node) {
             Label label = Label.html(node.graphName());
             return node(sanitizeNodeName(transitionState.graphName())).with(label,Shape.DIAMOND, Font.size(10));
         }
         return node(sanitizeNodeName(transitionState.graphName()));
+    }
+
+    private static Graph getGraphvizGraphFromModule(TransitionState transitionState, StyleAttribute... styles) {
+        if (transitionState instanceof StateWorkflow workflow) {
+            return createGraph(
+                    workflow.getTransitions(),
+                    workflow.getComputedTransitions(),
+                    true,
+                    styles
+            );
+        }
+        return null;
     }
 
     /**

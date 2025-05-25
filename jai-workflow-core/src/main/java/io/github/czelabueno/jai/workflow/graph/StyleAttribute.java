@@ -9,5 +9,5 @@ public interface StyleAttribute {
      *
      * @return the code representing the style attribute
      */
-    public String getCode();
+    String getCode();
 }

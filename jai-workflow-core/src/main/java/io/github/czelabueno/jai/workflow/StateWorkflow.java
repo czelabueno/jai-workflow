@@ -5,6 +5,8 @@ import io.github.czelabueno.jai.workflow.graph.StyleAttribute;
 import io.github.czelabueno.jai.workflow.node.Conditional;
 import io.github.czelabueno.jai.workflow.node.Node;
 import io.github.czelabueno.jai.workflow.transition.ComputedTransition;
+import io.github.czelabueno.jai.workflow.transition.Transition;
+import io.github.czelabueno.jai.workflow.transition.TransitionState;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -16,7 +18,7 @@ import java.util.function.Consumer;
  *
  * @param <T> the type of the stateful bean used in the workflow
  */
-public interface StateWorkflow<T> {
+public interface StateWorkflow<T> extends TransitionState {
 
     /**
      * Adds a node to the workflow.
@@ -80,11 +82,25 @@ public interface StateWorkflow<T> {
     T runStream(Consumer<Node<T, ?>> eventConsumer);
 
     /**
+     * Returns the list of definition transition in the workflow.
+     *
+     * @return the list of definition transitions
+     */
+    List<Transition> getTransitions();
+
+    /**
      * Returns the list of computed transitions in the workflow.
      *
      * @return the list of computed transitions
      */
     List<ComputedTransition> getComputedTransitions();
+
+    /**
+     * Convert a StateWorkflow as a Module.
+     *
+     * @return a StateWorkflow as a Module
+     */
+    StateWorkflow toModule();
 
     /**
      * Generates an image of the workflow and saves it to the specified output path.

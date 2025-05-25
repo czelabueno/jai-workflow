@@ -1,5 +1,5 @@
 
-# ![logo](docs/docs/static/logo.png) jAI Workflow ☕: Build programmatically custom agentic workflows, AI Agents, Agentic RAG systems for java.
+# ![logo](docs/docs/static/logo-180x180.png) jAI Workflow ☕: Build programmatically custom agentic workflows, AI Agents, Agentic RAG systems for java.
 [![Build Status](https://github.com/czelabueno/langchain4j-workflow/actions/workflows/ci.yaml/badge.svg)](https://github.com/czelabueno/langchain4j-workflow/actions/workflows/ci.yaml)
 [![Version](https://img.shields.io/maven-central/v/io.github.czelabueno/jai-workflow-parent?logo=apachemaven)](https://search.maven.org/#search|gav|1|g:"io.github.czelabueno"%20AND%20a:"jai-workflow-core")
 [![Docs](https://img.shields.io/badge/docs-latest-blue)](https://czelabueno.github.io/jai-workflow/)

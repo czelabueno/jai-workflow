@@ -40,4 +40,4 @@ build/
 
 
 ### Mkdocs
-./docs/site/
+/docs/site/**
