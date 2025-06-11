@@ -57,7 +57,14 @@ public interface StateWorkflow<T> extends TransitionState {
      * @param startNode the starting node
      * @return the state workflow with the starting node set
      */
-    StateWorkflow startNode(Node<T,?> startNode);
+    StateWorkflow startNode(TransitionState startNode);
+
+    /**
+     * Returns the starting node defined in the workflow.
+     *
+     * @return the starting node defined in the workflow
+     */
+    TransitionState getStartNode();
 
     /**
      * Returns the last node defined in the workflow.
@@ -79,7 +86,7 @@ public interface StateWorkflow<T> extends TransitionState {
      * @param eventConsumer the consumer to process node events
      * @return the stateful bean after the workflow execution
      */
-    T runStream(Consumer<Node<T, ?>> eventConsumer);
+    T runStream(Consumer<TransitionState> eventConsumer);
 
     /**
      * Returns the list of definition transition in the workflow.
@@ -94,6 +101,20 @@ public interface StateWorkflow<T> extends TransitionState {
      * @return the list of computed transitions
      */
     List<ComputedTransition> getComputedTransitions();
+
+    /**
+     * Returns if the workflow was run or not.
+     *
+     * @return a boolean indicating if the workflow was run
+     */
+    Boolean wasRun();
+
+    /**
+     * Returns if workflow is a module or not
+     *
+     * @return a boolean indicating if the workflow is a module
+     */
+    Boolean isModule();
 
     /**
      * Convert a StateWorkflow as a Module.

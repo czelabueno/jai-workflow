@@ -28,6 +28,13 @@ public interface TransitionState{
     List<String> labels();
 
     /**
+     * Sets the labels of the state in the graph.
+     *
+     * @param labels the labels to set
+     */
+    void setLabels(String... labels);
+
+    /**
      * Checks if the state has a given label.
      *
      * @param label the label to check

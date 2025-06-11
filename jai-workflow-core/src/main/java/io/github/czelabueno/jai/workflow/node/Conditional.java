@@ -4,6 +4,8 @@ import io.github.czelabueno.jai.workflow.transition.TransitionState;
 import lombok.Getter;
 import lombok.NonNull;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -18,11 +20,12 @@ import java.util.function.Function;
 public class Conditional<T> implements TransitionState {
 
     private final String name;
-    private Function<T, Node<T,?>> condition;
+    private Function<T, TransitionState> condition;
     @Getter
-    private final List<Node<T,?>> expectedNodes;
+    private final List<TransitionState> expectedNodes;
     private T functionInput;
-    private Node<T,?> functionOutput;
+    private TransitionState functionOutput;
+    private List<String> labels;
 
     /**
      * Constructs a Conditional with the specified condition function and valid node types list.
@@ -33,7 +36,7 @@ public class Conditional<T> implements TransitionState {
      * @throws NullPointerException if the condition function or expected node list is null
      * @throws IllegalArgumentException if the expected node list is empty or the condition function's return type is not valid
      */
-    public Conditional(String name, @NonNull Function<T, Node<T,?>> condition, @NonNull List<Node<T,?>> expectedNodes) {
+    public Conditional(String name, @NonNull Function<T, TransitionState> condition, @NonNull List<TransitionState> expectedNodes) {
         this.condition = Objects.requireNonNull(condition, "Condition function cannot be null");
         this.expectedNodes = Objects.requireNonNull(expectedNodes, "The list of nodes expected from the condition function cannot be null");
         if (expectedNodes.isEmpty()) {
@@ -49,12 +52,12 @@ public class Conditional<T> implements TransitionState {
      * @return the resulting Node from the condition function
      * @throws NullPointerException if the input is null
      */
-    public Node<T,?> evaluate(T input) {
+    public TransitionState evaluate(T input) {
         Objects.requireNonNull(input, "Function Input cannot be null");
         functionInput = input;
         condition = condition.andThen(resultNode -> {
             if (!expectedNodes.contains(resultNode)) {
-                throw new RuntimeException("The condition function returned an invalid node type. Expected one of: " + expectedNodes + " but got: " + resultNode.getName() + " instead.");
+                throw new RuntimeException("The condition function returned an invalid node type. Expected one of: " + expectedNodes + " but got: " + resultNode.graphName() + " instead.");
             }
             return resultNode;
         });
@@ -71,7 +74,7 @@ public class Conditional<T> implements TransitionState {
      * @param <T> the stateful bean as input to the condition function
      * @return a new Conditional instance
      */
-    public static <T> Conditional<T> eval(String name, Function<T, Node<T, ?>> condition, List<Node<T, ?>> expectedNodes) {
+    public static <T> Conditional<T> eval(String name, Function<T, TransitionState> condition, List<TransitionState> expectedNodes) {
         return new Conditional<>(name, condition, expectedNodes);
     }
 
@@ -124,7 +127,27 @@ public class Conditional<T> implements TransitionState {
      */
     @Override
     public List<String> labels() {
-        return List.of("Conditional");
+        String label = "Conditional";
+        if (labels == null) {
+            return List.of(label);
+        } else {
+            labels.add(label);
+        }
+        return labels;
+    }
+
+    /**
+     * Sets the labels of the state in the graph.
+     *
+     * @param labels the labels to set
+     */
+    @Override
+    public void setLabels(String... labels) {
+        if (this.labels == null) {
+            this.labels = new ArrayList<>(Arrays.asList(labels));
+        } else {
+            this.labels.addAll(Arrays.asList(labels));
+        }
     }
 
     @Override
@@ -137,6 +160,6 @@ public class Conditional<T> implements TransitionState {
         if (functionOutput == null) {
             return null;
         }
-        return functionOutput.getName(); // Node name
+        return functionOutput.graphName(); // Node name
     }
 }

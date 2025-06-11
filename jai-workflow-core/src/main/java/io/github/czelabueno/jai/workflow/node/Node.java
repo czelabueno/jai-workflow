@@ -53,6 +53,7 @@ public class Node<T, R> implements TransitionState {
      *
      * @param labels the labels to add
      */
+    @Override
     public void setLabels(String... labels) {
         if (this.labels == null) {
             this.labels = new ArrayList<>(Arrays.asList(labels));

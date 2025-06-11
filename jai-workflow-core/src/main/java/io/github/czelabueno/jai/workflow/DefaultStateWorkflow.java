@@ -19,18 +19,21 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
-import static java.util.stream.Collectors.toList;
-import static java.util.stream.Collectors.toUnmodifiableList;
+import static java.util.Collections.emptyList;
+import static java.util.Comparator.comparingInt;
+import static java.util.stream.Collectors.*;
 
 public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultStateWorkflow.class);
     private final String name;
     private final Map<TransitionState, List<TransitionState>> adjList;
-    private volatile Node<T,?> startNode;
+    private volatile TransitionState startNode;
     private final T statefulBean;
     private final List<Transition> transitions; // definition transitions
     private final Map<TransitionState, CounterTransitionsPerState> transitionsPerState;
@@ -38,6 +41,8 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
     private volatile int executionOrder;
     private final List<ComputedTransition> computedTransitions; // computed transitions after running
     private boolean module;
+    private boolean wasRun;
+    private List<String> labels;
     private final GraphImageGenerator graphImageGenerator;
 
     protected DefaultStateWorkflow(Builder<T> builder) {
@@ -48,12 +53,12 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
             throw new IllegalArgumentException("At least one edged must be added to the workflow");
         }
 
-        this.name = builder.name != null ? builder.name : "default";
+        this.name = builder.name != null ? builder.name : "jAI-workflow";
         this.statefulBean = builder.statefulBean;
         this.adjList = new ConcurrentHashMap<>();
         this.transitions = Collections.synchronizedList(new ArrayList<>());
         this.computedTransitions = Collections.synchronizedList(new ArrayList<>());
-        this.module = false;
+        this.module = builder.asModule != null ? builder.asModule : false;
 
         this.graphImageGenerator = builder.graphImageGenerator != null ? builder.graphImageGenerator : GraphvizImageGenerator.builder().build();
 
@@ -132,18 +137,17 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
         boolean isMerge = false;
         boolean isParallel = false;
 
-        if (state instanceof Node) {
-            Node node = (Node) state;
-            isMerge = node.hasLabel("Merge");
-            isParallel = node.hasLabel("Parallel");
+        if (state instanceof Node || state instanceof DefaultStateWorkflow) {
+            isMerge = state.hasLabel("Merge");
+            isParallel = state.hasLabel("Parallel");
             if (isParallel && isSplit) {
-                throw new IllegalArgumentException("A parallel node '" + node.graphName() + "' cannot be a split node in the same flow");
+                throw new IllegalArgumentException("A parallel state '" + state.graphName() + "' cannot be a split state in the same flow");
             }
             if (isMerge && isSplit) {
-                throw new IllegalArgumentException("A merge node '" + node.graphName() + "' cannot be a split node in the same flow");
+                throw new IllegalArgumentException("A merge state '" + state.graphName() + "' cannot be a split state in the same flow");
             }
             if (isMerge && isParallel) {
-                throw new IllegalArgumentException("A merge node '" + node.graphName() + "' cannot be a parallel node in the same flow");
+                throw new IllegalArgumentException("A merge node '" + state.graphName() + "' cannot be a parallel state in the same flow");
             }
             if (isMerge) {
                 int mergeInputTransitions = this.transitionsPerState.get(state).getInputTransitions(); // number of input transitions for merge node
@@ -153,28 +157,34 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
                         .ifPresent(existingSplitNode -> {
                             int splitOutputTransitions = this.transitionsPerState.get(existingSplitNode).getOutputTransitions(); // number of output transitions for split node
                             if (mergeInputTransitions != splitOutputTransitions) {
-                                throw new IllegalArgumentException("The merge node '" + node.graphName() + "' must have the same number of input transitions as the number of output transitions from the split node '" + existingSplitNode.graphName() + "'");
+                                throw new IllegalArgumentException("The merge state '" + state.graphName() + "' must have the same number of input transitions as the number of output transitions from the split node '" + existingSplitNode.graphName() + "'");
                             }
                         });
             }
-            if (isSplit) node.setLabels("Split");
+            if (isSplit) state.setLabels("Split");
         }
         this.compiledStates.add(state); // state compiled and validated
+
+        // Determine startNode and setting it if necessary
+        if (state == WorkflowStateName.START) {
+            this.startNode = determineStartNode(this.startNode, this.adjList.get(state));
+        }
 
         List<TransitionState> nextStates = this.adjList.get(state);
         for (TransitionState nextState : nextStates) {
             if (!this.compiledStates.contains(nextState)) {
-                if (nextState instanceof Node) {
-                    Node<T, ?> targetNode = (Node<T, ?>) nextState;
+                if (nextState instanceof Node || nextState instanceof DefaultStateWorkflow) {
                     if (isSplit || isParallel) {
-                        targetNode.setLabels("Parallel");
+                        nextState.setLabels("Parallel");
                     }
-                    if (this.transitionsPerState.get(targetNode).getInputTransitions() > 1 && this.transitions.stream()
-                                .filter(transition -> transition.to().equals(targetNode) && transition.from() instanceof Conditional)
+                    if (this.transitionsPerState.get(nextState).getInputTransitions() > 1 &&
+                            this.transitions.stream()
+                                .filter(transition -> transition.to().equals(nextState) && transition.from() instanceof Conditional)
                                 .findAny()
-                                .isEmpty()){ // 'from' should not be a Conditional node
-                        targetNode.labels().clear();
-                        targetNode.setLabels("Merge");
+                                .isEmpty() && // 'from' should not be a Conditional node
+                            state.hasLabel("Parallel")){ //TODO: To check with other test cases
+                        nextState.labels().clear();
+                        nextState.setLabels("Merge");
                     }
                 }
                 if (isParallel){
@@ -232,9 +242,19 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
     }
 
     @Override
-    public DefaultStateWorkflow startNode(Node<T,?> startNode){
+    public DefaultStateWorkflow startNode(TransitionState startNode){
         this.startNode = startNode;
         return this;
+    }
+
+    /**
+     * Returns the starting node defined in the workflow.
+     *
+     * @return the starting node defined in the workflow
+     */
+    @Override
+    public TransitionState getStartNode() {
+        return this.startNode;
     }
 
     @Override
@@ -259,136 +279,189 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
 
     @Override
     public T run() {
-        return run(this.startNode, null);
+        return run(this, null);
     }
 
     @Override
-    public T runStream(Consumer<Node<T, ?>> eventConsumer) {
-        return run(this.startNode, eventConsumer);
+    public T runStream(Consumer<TransitionState> eventConsumer) {
+        return run(this, eventConsumer);
     }
 
-    private T run(Node<T,?> node, Consumer<Node<T, ?>> eventConsumer) {
-        if (this.compiledStates == null || this.compiledStates.isEmpty()) {
-            throw new IllegalStateException("jai workflow cannot run without a built workflow");
-        }
-        if (this.transitions == null || this.transitions.isEmpty()) {
-            throw new IllegalStateException("jai workflow cannot run without edges defined");
-        }
-        List<Node> startNodes = this.adjList.get(WorkflowStateName.START).stream()
-                .filter(transitionState -> transitionState instanceof Node)
-                .map(transitionState -> (Node) transitionState)
-                .toList();
-        node = determineStartNode(node, startNodes);
+    private T run(DefaultStateWorkflow<T> workflow, Consumer<TransitionState> eventConsumer) {
+        List<TransitionState> compiledStates = workflow.compiledStates;
+        List<Transition> transitions = workflow.transitions;
+        TransitionState startState = workflow.startNode;
 
-        resetWorkflowState();
-        log.debug("STARTING workflow{}..", eventConsumer != null ? " in stream mode" : "");
-        runNode(node, eventConsumer);
-        log.debug("END workflow..");
+        if (compiledStates == null || compiledStates.isEmpty()) {
+            throw new IllegalStateException(workflow.name + " cannot run without a built workflow");
+        }
+        if (transitions == null || transitions.isEmpty()) {
+            throw new IllegalStateException(workflow.name + "cannot run without transitions defined");
+        }
+        TransitionState startNode  = determineStartNode(startState, null);
+        resetWorkflowState(workflow);
+        log.debug("STARTING " + workflow.graphName() + (workflow.module ? " as a module":"") + "{}..", eventConsumer != null ? " in stream mode" : "");
+        runState(workflow, startNode, eventConsumer);
+        log.debug("END " + workflow.graphName() + (workflow.module ? " as a module":""));
         return statefulBean;
     }
 
-    private Node<T,?> determineStartNode(Node<T,?> node, List<Node> startNodes) {
-        if (node == null) {
+    private TransitionState determineStartNode(TransitionState start, List<TransitionState> startNodes) {
+        if (start == null) {
             if (startNodes.size() > 1) {
                 throw new IllegalStateException("Its not possible to determine the start node, multiple start nodes found: " +
-                        startNodes.stream().sorted(Comparator.comparing(startNodes::indexOf)).map(Node::getName).toList() +
+                        startNodes.stream().sorted(Comparator.comparing(startNodes::indexOf)).map(TransitionState::graphName).toList() +
                         "\nPlease specify the start node using the .startNode(Node<T> node) method");
             } else if (startNodes.size() == 1) {
-                node = startNodes.get(0);
+                start = startNodes.get(0);
+            }
+        } else if (start instanceof DefaultStateWorkflow module) {
+            if (module.startNode == null) {
+                throw new IllegalArgumentException("The provided module " + module.name + " does not have a start node defined. Please specify the start node using the .startNode(Node<T> node) method");
             }
         }
-        return node;
+        return start;
     }
 
-    private void resetWorkflowState() {
-        this.computedTransitions.clear(); // clean previous transitions
-        this.executionOrder=1;
+    private void resetWorkflowState(DefaultStateWorkflow<T> workflow) {
+        workflow.computedTransitions.clear(); // clean previous transitions
+        workflow.executionOrder=1;
+        workflow.wasRun = true; // mark workflow as run
     }
 
-    private void runNode(Node<T,?> node, Consumer<Node<T, ?>> eventConsumer) {
-        log.debug("Running node name: " + node.getName() + "..");
+    private void runState(DefaultStateWorkflow<T> workflow, TransitionState state, Consumer<TransitionState> eventConsumer) {
+        log.debug("Running state name: " + state.graphName() + "..");
+        Map<TransitionState, List<TransitionState>> adjList = workflow.adjList;
         synchronized (this.statefulBean) {
-            node.execute(this.statefulBean);
+            if (state instanceof Node node) {
+                node.execute(this.statefulBean);
+            } else if (state instanceof DefaultStateWorkflow module) {
+                runModule(module, eventConsumer);
+            }
         }
         if (eventConsumer != null) {
-            eventConsumer.accept(node);
+            eventConsumer.accept(state);
         }
-        List<TransitionState> nextNodes;
-        synchronized (this.adjList) {
-            nextNodes = this.adjList.get(node);
+        List<TransitionState> nextStates;
+        synchronized (adjList) {
+            nextStates = adjList.get(state);
         }
 
-        if (node.hasLabel("Split")) {
+        if (state.hasLabel("Split")) {
             // Parallel execution
-            log.debug("Running node in parallel..");
-            nextNodes.parallelStream()
-                    .forEach(nextNode -> {
-                        if (nextNode instanceof Node next) {
-                            computeTransition(node, next);
-                            runNode(next, eventConsumer);
-                        }
-                    });
-            // Wait for all parallel tasks to complete
-            ComputedTransition ct = getComputedTransitions().stream()
-                    .reduce((first, second) -> second)
-                    .orElse(null);
-            Node nodeMerge = ct.getTransition().to().hasLabel("Merge") ? (Node) ct.getTransition().to() : null;
-            if (nodeMerge != null) {
-                computeTransition(node, nodeMerge);
-                runNode(nodeMerge, eventConsumer);
-            }
+            processNextStatesInParallel(workflow, state, nextStates, eventConsumer);
+            // Wait for all parallel tasks to continue with the Merge node
+            List<ComputedTransition> lastParallelTransitions = workflow.getComputedTransitions().stream()
+                    .filter(ct -> ct.getTransition().to().hasLabel("Parallel"))
+                    .collect(groupingBy(ComputedTransition::getOrder))
+                    .entrySet().stream()
+                    .max(comparingInt(Map.Entry::getKey))
+                    .map(Map.Entry::getValue)
+                    .orElse(emptyList());
 
-        } else if (node.hasLabel("Merge")) {
-            // Merge node waits for all parallel tasks to complete
-            log.debug("Running node in merge mode..");
-            for (TransitionState nextNode: nextNodes) {
-                if (nextNode instanceof Node next) {
-                    computeTransition(node, next);
-                    runNode(next, eventConsumer);
-                }
-            }
-        } else {
-            // Sequential execution
-            log.debug("Running node sequentially..");
-            for (TransitionState nextNode : nextNodes) {
-                if (nextNode instanceof WorkflowStateName next) {
-                    if (next == WorkflowStateName.END) {
-                        log.debug("Reached END state");
-                        computeTransition(node, next);
-                        return;
-                    }
-                } else if (nextNode instanceof Node next) {
-                    computeTransition(node, next);
-                    if (!next.hasLabel("Merge")) {
-                        runNode(next, eventConsumer);
-                    }
-                } else if (nextNode instanceof Conditional next) {
-                    computeTransition(node, next);
-                    Node<T,?> conditionalNode = next.evaluate(this.statefulBean);
-                    if (conditionalNode == null) {
-                        throw new IllegalStateException("Conditional node returned null");
-                    } else {
-                        computeTransition(next, conditionalNode);
-                        runNode(conditionalNode, eventConsumer);
-                    }
-                }
-            }
+            TransitionState mergeState = lastParallelTransitions.stream()
+                    .flatMap(ct -> workflow.getTransitions().stream()
+                            .filter(t -> t.from().equals(ct.getTransition().to()) && t.to().hasLabel("Merge")))
+                    .map(Transition::to)
+                    .findFirst()
+                    .map(mergeTo -> { // compute all input transitions of the merge state before return
+                        workflow.getTransitions().stream()
+                                .filter(t -> t.to().hasLabel("Merge") && t.to().equals(mergeTo))
+                                .distinct()
+                                .forEach(t -> computeTransition(workflow, t.from(), t.to()));
+                        return mergeTo;
+                    })
+                    .orElseThrow(() -> new RuntimeException("Merge state was not found. " +
+                            "This should not happen if the workflow is correctly defined with a Merge node after a Parallel node"));
+            // Run the Merge node after all parallel tasks are completed
+            runState(workflow, mergeState, eventConsumer);
+        } else { // Merge and others for this way
+            processNextStatesSequentially(workflow, state, nextStates, eventConsumer);
         }
     }
 
-    private void computeTransition(TransitionState from, TransitionState to) {
-        this.transitions.stream()
+    private void processNextStatesInParallel(DefaultStateWorkflow<T> workflow, TransitionState currentState, List<TransitionState> nextStates, Consumer<TransitionState> eventConsumer) {
+        processNextStates(workflow, currentState, nextStates, true, eventConsumer);
+    }
+
+    private void processNextStatesSequentially(DefaultStateWorkflow<T> workflow, TransitionState currentState, List<TransitionState> nextStates, Consumer<TransitionState> eventConsumer) {
+        processNextStates(workflow, currentState, nextStates, false, eventConsumer);
+    }
+
+    private void processNextStates(DefaultStateWorkflow<T> workflow, TransitionState currentState, List<TransitionState> nextStates, Boolean isParallel, Consumer<TransitionState> eventConsumer) {
+        Stream<TransitionState> nextStatesStream = nextStates.stream();
+        if (isParallel) {
+            nextStatesStream = nextStatesStream.parallel();
+            log.debug("Processing next states in parallel..");
+        } else {
+            log.debug("Processing next states sequentially..");
+        }
+        nextStatesStream.forEach((nextNode) -> {
+            if (nextNode instanceof WorkflowStateName next) {
+                if (next == WorkflowStateName.END) {
+                    log.debug(workflow.graphName()+ " reached END state");
+                    computeTransition(workflow, currentState, next);
+                }
+            } else if (nextNode instanceof Node next) {
+                if (!next.hasLabel("Merge")) {
+                    computeTransition(workflow, currentState, next);
+                    runState(workflow, next, eventConsumer);
+                }
+            } else if (nextNode instanceof Conditional next) {
+                computeTransition(workflow, currentState, next);
+                TransitionState conditionalResult = next.evaluate(this.statefulBean);
+                if (conditionalResult == null) {
+                    throw new IllegalStateException("Conditional node returned null");
+                } else if (conditionalResult instanceof Node conditionalNode) {
+                    computeTransition(workflow, next, conditionalNode);
+                    runState(workflow, conditionalNode, eventConsumer);
+                } else if (conditionalResult instanceof DefaultStateWorkflow nextModule) {
+                    if (!next.hasLabel("Merge")) {
+                        computeTransition(workflow, next, nextModule);
+                        runState(workflow, nextModule, eventConsumer);
+                    }
+//                    runModule(nextModule, eventConsumer);
+                    // Resuming the next steps of the parent workflow
+//                    List<TransitionState> nextStatesFromModule = workflow.adjList.get(nextModule);
+//                    if (nextStatesFromModule != null && !nextStatesFromModule.isEmpty()) {
+//                        processNextStates(workflow, nextModule, nextStatesFromModule, false, eventConsumer);
+//                    }
+                }
+            } else if (nextNode instanceof DefaultStateWorkflow next) {
+                if (!next.hasLabel("Merge")) {
+                    computeTransition(workflow, currentState, next);
+                    runState(workflow, next, eventConsumer);
+                }
+//                runModule(next, eventConsumer);
+                // Resuming the next steps of the parent workflow
+//                List<TransitionState> nextStatesFromModule = workflow.adjList.get(next);
+//                if (nextStatesFromModule != null && !nextStatesFromModule.isEmpty()) {
+//                    processNextStates(workflow, next, nextStatesFromModule, false, eventConsumer);
+//                }
+            }
+        });
+    }
+
+    private void runModule(DefaultStateWorkflow<T> module, Consumer<TransitionState> eventConsumer) {
+        if (!module.module) {
+            throw new IllegalArgumentException("Workflow was not marked as module. It cannot be added to a running workflow");
+        }
+        run(module, eventConsumer);
+    }
+
+    private void computeTransition(DefaultStateWorkflow<T> workflow, TransitionState from, TransitionState to) {
+        workflow.getTransitions().stream()
                 .filter(transition -> transition.from().equals(from) && transition.to().equals(to))
                 .findAny()
                 .ifPresent(transition -> {
-                    synchronized (this.computedTransitions) {
-                        Optional<Integer> existingOrder = this.computedTransitions.stream()
+                    synchronized (workflow.getComputedTransitions()) {
+                        Optional<Integer> existingOrder = workflow.getComputedTransitions().stream()
                                 .filter(t -> t.getTransition().from().equals(from) || t.getTransition().to().equals(to))
                                 .map(ComputedTransition::getOrder)
                                 .findFirst();
 
-                        int order = existingOrder.isPresent() ? existingOrder.get() : this.executionOrder++;
-                        this.computedTransitions.add(ComputedTransition.from(order, transition));
+                        int order = existingOrder.isPresent() ? existingOrder.get() : workflow.executionOrder++;
+                        workflow.computedTransitions.add(ComputedTransition.from(order, transition));
                     }
                 });
     }
@@ -408,13 +481,18 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
                 .collect(toUnmodifiableList());
     }
 
+    @Override
+    public Boolean isModule() {
+        return this.module;
+    }
+
     /**
      * Convert a StateWorkflow as a Module.
      *
      * @return a StateWorkflow as a Module
      */
     @Override
-    public StateWorkflow toModule() {
+    public DefaultStateWorkflow toModule() {
         this.module=true;
         return this;
     }
@@ -424,23 +502,20 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
      *
      * @return true if the workflow has been run, false otherwise
      */
+    @Override
     public Boolean wasRun() {
-        return !this.computedTransitions.isEmpty();
+        return this.wasRun;
     }
 
     @Override
     public void generateComputedWorkflowImage(Format format, String outputPath, List<StyleAttribute> styleAttributes) throws IOException {
-        GraphvizImageGenerator graphImageGenerator = GraphvizImageGenerator.builder()
-                .computedTransitions(getComputedTransitions())
-                .build();
+        GraphvizImageGenerator graphImageGenerator = GraphvizImageGenerator.builder().build();
         imageGenerator(graphImageGenerator, format, outputPath, styleAttributes);
     }
 
     @Override
     public BufferedImage generateComputedWorkflowBufferedImage(Format format, List<StyleAttribute> styleAttributes) throws RuntimeException {
-        GraphvizImageGenerator graphImageGenerator = GraphvizImageGenerator.builder()
-                .computedTransitions(getComputedTransitions())
-                .build();
+        GraphvizImageGenerator graphImageGenerator = GraphvizImageGenerator.builder().build();
         return imageGenerator(graphImageGenerator, format, styleAttributes);
     }
 
@@ -475,25 +550,23 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
     }
 
     private BufferedImage imageGenerator(GraphImageGenerator graphImageGenerator, Format format, List<StyleAttribute> styleAttributes) throws RuntimeException {
-        List<Transition> transitions = this.transitions.stream().toList();
         return graphImageGenerator.generateBufferedImage(
-                transitions,
+                this,
                 format,
                 styleAttributes.toArray(new StyleAttribute[0]));
     }
 
     private void imageGenerator(GraphImageGenerator graphImageGenerator, Format format, String outputPath, List<StyleAttribute> styleAttributes) throws IOException {
-        List<Transition> transitions = this.transitions.stream().toList();
         try {
             Path path = Paths.get(outputPath);
             graphImageGenerator.generateImage(
-                    transitions,
+                    this,
                     path.toAbsolutePath().toString(), // Absolute path by default
                     format,
                     styleAttributes.toArray(new StyleAttribute[0]));
         } catch (InvalidPathException e) {
             log.warn("Invalid path: " + outputPath + " using default path");
-            graphImageGenerator.generateImage(transitions, format);
+            graphImageGenerator.generateImage(this, format);
         } catch (IOException e) {
             log.error("Error generating workflow image: " + e.getMessage());
             throw e;
@@ -518,10 +591,29 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
 
     @Override
     public List<String> labels() {
-        if (this.module) {
-            return List.of("Module");
+        String label = "Workflow";
+        if (this.module)
+            label= "Module";
+        if (labels == null) {
+            return List.of(label);
+        } else {
+            labels.add(label);
         }
-        return List.of("Workflow");
+        return labels;
+    }
+
+    /**
+     * Sets the labels of the state in the graph.
+     *
+     * @param labels the labels to set
+     */
+    @Override
+    public void setLabels(String... labels) {
+        if (this.labels == null) {
+            this.labels = new ArrayList<>(Arrays.asList(labels));
+        } else {
+            this.labels.addAll(Arrays.asList(labels));
+        }
     }
 
     @Override
@@ -550,6 +642,8 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
         private T statefulBean;
         private List<Transition> addEdges = new ArrayList<>();
         private List<Node<T, ?>> addNodes = new ArrayList<>();
+
+        private Boolean asModule = false;
         private GraphImageGenerator graphImageGenerator;
 
         /**
@@ -585,6 +679,17 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
         }
 
         /**
+         * Adds the specified edges to the workflow.
+         *
+         * @param edges the edges to add to the workflow
+         * @return this builder
+         */
+        public Builder<T> addEdges(List<Transition> edges) {
+            this.addEdges.addAll(edges);
+            return this;
+        }
+
+        /**
          * Adds the specified nodes to the workflow.
          *
          * @param nodes the nodes to add to the workflow
@@ -592,6 +697,22 @@ public class DefaultStateWorkflow<T> implements StateWorkflow<T> {
          */
         public Builder<T> addNodes(Node<T, ?>... nodes) {
             this.addNodes.addAll(Arrays.asList(nodes));
+            return this;
+        }
+
+        /**
+         * Adds the specified nodes to the workflow.
+         *
+         * @param nodes the nodes to add to the workflow
+         * @return this builder
+         */
+        public Builder<T> addNodes(List<Node<T, ?>> nodes) {
+            this.addNodes.addAll(nodes);
+            return this;
+        }
+
+        public Builder<T> asModule() {
+            this.asModule = true;
             return this;
         }
 

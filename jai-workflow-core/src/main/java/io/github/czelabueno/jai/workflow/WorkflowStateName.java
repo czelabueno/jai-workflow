@@ -36,6 +36,17 @@ public enum WorkflowStateName implements TransitionState {
         return List.of(graphName);
     }
 
+    /**
+     * Sets the labels of the state in the graph.
+     *
+     * @param labels the labels to set
+     */
+    @Override
+    public void setLabels(String... labels) {
+        // No labels to set for WorkflowStateName
+        throw new UnsupportedOperationException("WorkflowStateName does not support setting labels.");
+    }
+
     @Override
     public Object input() {
         return Void.TYPE;
