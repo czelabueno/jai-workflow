@@ -1,5 +1,6 @@
 package io.github.czelabueno.jai.workflow.node;
 
+import io.github.czelabueno.jai.workflow.transition.TransitionState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -60,20 +61,20 @@ class ConditionalTest {
 
         // when
         Conditional conditional = new Conditional("condition", condition, List.of(node1, node2));
-        Node node = conditional.evaluate("sum");
+        TransitionState node = conditional.evaluate("sum");
 
         // then
         assertThat(node).isNotNull();
         assertThat(node).isEqualTo(node1);
-        assertThat(node.getName()).isEqualTo("node1");
+        assertThat(node.graphName()).isEqualTo("node1");
 
         // when
-        Node other = conditional.evaluate("other");
+        TransitionState other = conditional.evaluate("other");
 
         // then
         assertThat(other).isNotNull();
         assertThat(other).isEqualTo(node2);
-        assertThat(other.getName()).isEqualTo("node2");
+        assertThat(other.graphName()).isEqualTo("node2");
     }
 
     @Test
@@ -89,7 +90,7 @@ class ConditionalTest {
     @Test
     void test_inline_eval_static_method() {
         // given
-        Node nodeReturned = Conditional.eval(
+        TransitionState nodeReturned = Conditional.<Integer>eval(
                 "condition",
                 s -> s > 5 ? node2 : node1, // function input type expected is the same node input type
                 List.of(node2, node1)
@@ -98,7 +99,7 @@ class ConditionalTest {
         // then
         assertThat(nodeReturned).isNotNull();
         assertThat(nodeReturned).isEqualTo(node2);
-        assertThat(nodeReturned.getName()).isEqualTo("node2");
+        assertThat(nodeReturned.graphName()).isEqualTo("node2");
     }
 
     @Test
@@ -109,26 +110,26 @@ class ConditionalTest {
         Conditional conditional = Conditional.eval("condition",
                 condition,
                 List.of(node2, node1));
-        Node node = conditional.evaluate("sum");
+        TransitionState node = conditional.evaluate("sum");
 
         // then
         assertThat(node).isNotNull();
         assertThat(node).isEqualTo(node1);
-        assertThat(node.getName()).isEqualTo("node1");
+        assertThat(node.graphName()).isEqualTo("node1");
 
         // when
-        Node other = conditional.evaluate("subs");
+        TransitionState other = conditional.evaluate("subs");
 
         // then
         assertThat(other).isNotNull();
         assertThat(other).isEqualTo(node2);
-        assertThat(other.getName()).isEqualTo("node2");
+        assertThat(other.graphName()).isEqualTo("node2");
     }
 
     @Test
     void test_any_expected_nodes_does_not_match_with_returned_node() {
         assertThatExceptionOfType(RuntimeException.class)
-                .isThrownBy(() -> Conditional.eval(
+                .isThrownBy(() -> Conditional.<Integer>eval(
                         "condition",
                         s -> s > 5 ? node2 : node1,
                         List.of(node1) // node2 is expected
