@@ -361,6 +361,140 @@ You can check all examples in the [jai-workflow-langchain4j-examples](https://gi
   - Java example: _Very soon_
   - Based on Paper: https://arxiv.org/pdf/2305.04091
 
+## ❓ FAQ
+
+### What is jAI Workflow?
+
+jAI Workflow is a **Java library** for building stateful, graph-based agentic workflows. It allows you to design complex AI applications like RAG systems and multi-agent architectures as directed graphs with nodes, transitions, and conditional branching — all in pure Java code.
+
+### How does jAI Workflow differ from other workflow frameworks?
+
+Unlike general workflow engines, jAI Workflow is **AI-native** and **stateful**:
+- **Configuration-as-Code**: Workflows are defined in Java, not JSON/YAML
+- **Stateful POJO**: Your custom state objects (beans) persist through workflow execution
+- **Graph-Based**: Supports one-way, round-trip, loops, recursion, and parallel execution
+- **Streaming**: Real-time output as nodes produce results
+- **AI Ecosystem**: Integrates with LangChain4j and can extend to other AI frameworks
+
+### What Java version is required?
+
+jAI Workflow requires **Java 11+**. It uses modern Java features like records, streams, and reactive programming (Project Reactor) for streaming workflows.
+
+### How do I add jAI Workflow to my project?
+
+Add the Maven dependency:
+
+```xml
+<dependency>
+    <groupId>io.github.czelabueno</groupId>
+    <artifactId>jai-workflow-core</artifactId>
+    <version>0.3.0</version>
+</dependency>
+```
+
+For LangChain4j integration, also add:
+
+```xml
+<dependency>
+    <groupId>io.github.czelabueno</groupId>
+    <artifactId>jai-workflow-langchain4j</artifactId>
+    <version>0.3.0</version>
+</dependency>
+```
+
+### What LLM providers are supported?
+
+Through LangChain4j integration, jAI Workflow supports:
+- **OpenAI**: GPT-4, GPT-3.5-turbo
+- **Anthropic**: Claude models
+- **Azure OpenAI**: Enterprise deployments
+- **Google**: Gemini models
+- **Local Models**: Ollama, LM Studio, etc.
+
+### Can I use jAI Workflow without LangChain4j?
+
+Yes! The core `jai-workflow-core` library is independent and can be used with any LLM provider. Simply implement your own `Node` functions that call your preferred LLM API.
+
+### What workflow patterns are supported?
+
+jAI Workflow supports multiple patterns from the Modular RAG AI paper:
+- **One-way**: Sequential node execution
+- **Parallelization**: Multiple nodes execute concurrently (definition/build time)
+- **Routing**: Conditional branching based on state
+- **Branching**: Multiple paths from a decision node
+- **Conditional**: Dynamic evaluation of which node to execute
+
+### How do I visualize my workflow?
+
+jAI Workflow can generate workflow images:
+
+```java
+// Generate at definition time
+workflow.generateImage("workflow-definition.svg");
+
+// Generate after execution (shows computed transitions)
+workflow.generateComputedImage("workflow-execution.svg");
+```
+
+Uses Graphviz by default. Supports `StyleGraph.SKETCHY` for Excalidraw-style diagrams.
+
+### What is a "Computed Transition"?
+
+A `ComputedTransition` records each step during workflow execution:
+- Source and target nodes
+- Execution order and timestamp
+- Input/output payloads
+
+Use this for debugging, observability, and auditing workflow behavior.
+
+### Can I modify a workflow at runtime?
+
+Yes! jAI Workflow supports **JIT modification**:
+- `workflow.putEdge(..)` — Add new transitions
+- `workflow.addNode(..)` — Add new nodes
+- `workflow.startNode(..)` — Change the start node
+
+This allows dynamic behavior changes during execution.
+
+### How do I implement Human-in-the-loop?
+
+Use conditional nodes that pause execution and wait for human input:
+
+```java
+Node reviewNode = Node.from("Review", state -> {
+    // Wait for human approval
+    return state.isApproved() ? approvedNode : rejectedNode;
+});
+```
+
+### What is a Module?
+
+A `Module` is a reusable group of nodes. Define complex sub-workflows once and reuse them across different applications. Modules promote code reuse and maintainability.
+
+### Can I deploy workflows as APIs?
+
+Yes! jAI Workflow can be published as a REST API using Spring Boot or any Java web framework. Expose `workflow.run(input)` as an endpoint for remote execution.
+
+### How do I debug workflow issues?
+
+- Use `ComputedTransition` list to trace execution
+- Generate computed workflow images to visualize paths taken
+- Check node input/output payloads in each transition
+- Enable logging in your node functions
+
+### Where can I find examples?
+
+See the [jai-workflow-langchain4j-examples](https://github.com/czelabueno/langchain4j-workflow-examples) repository:
+- **MoA**: Mixture-of-Agents implementation
+- **Corrective RAG**: Error-correcting retrieval workflow
+- **Multi-agent Collaboration**: Agent team orchestration (coming soon)
+
+### How do I contribute?
+
+Open an issue or pull request on GitHub. The project welcomes new ideas, bug fixes, and feature implementations. See [Contribute & feedback](#-contribute--feedback) section.
+
+---
+
 ## 💬 Contribute & feedback
 If you have any feedback, suggestions, or want to contribute, please feel free to open an issue or a pull request. We are open to new ideas and suggestions.
 Help us to maturity this project and make it more useful for the java community.
